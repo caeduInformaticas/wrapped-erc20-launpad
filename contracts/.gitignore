@@ -1,0 +1,70 @@
+# ----------------------------
+# Dependencias / entorno
+# ----------------------------
+node_modules/
+
+# Variables de entorno (mantén un .env.example)
+.env
+.env.*
+!.env.example
+.envrc
+
+# ----------------------------
+# Hardhat
+# ----------------------------
+artifacts/
+cache/
+.hardhat/
+
+# ----------------------------
+# Hardhat Ignition
+# (ignora solo la red local efímera; conserva testnets/mainnet para rastrear direcciones)
+ignition/deployments/chain-31337/
+
+# Si prefieres ignorar TODO Ignition (no recomendado), usa:
+# ignition/deployments/
+
+# ----------------------------
+# TypeChain
+# ----------------------------
+typechain/
+typechain-types/
+
+# ----------------------------
+# Cobertura y reportes
+# ----------------------------
+coverage/
+coverage.json
+gasReporterOutput*.json
+gasReporterOutput*.txt
+
+# ----------------------------
+# TypeScript
+# ----------------------------
+*.tsbuildinfo
+
+# ----------------------------
+# Logs
+# ----------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ----------------------------
+# Editores / SO
+# ----------------------------
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# ----------------------------
+# OpenZeppelin Upgrades (si lo usas)
+# Conserva los manifests de redes reales en el repo.
+# Ignora solo el de la red local efímera (nombre habitual):
+.openzeppelin/unknown-31337.json
