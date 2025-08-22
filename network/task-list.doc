@@ -1,0 +1,252 @@
+🏆 CRED Token - Plan de Implementación
+Sistema de Wrapped ERC-20 con Factory y Gobernanza por Roles
+Basado en el enunciado del README: Sistema on-chain para envolver tokens ERC-20 existentes con comisiones en depósitos y gobernanza por roles, similar a WETH9 pero para cualquier ERC-20.
+
+📋 Roadmap de Tareas Específicas
+Phase 1: Tokens Mock y Fundamentos
+Task 1.1: Mock Tokens para Testing
+Objetivo: Crear tokens ERC-20 de prueba según especificaciones del README
+
+Criterios del README:
+
+Tokens ERC-20 estándar (saldos, transferencias, approvals)
+Soporte opcional para EIP-2612 (permit) para mejor UX
+Compatibilidad total con estándar ERC-20
+Tests requeridos:
+
+✅ Deploy y configuración inicial (name, symbol, decimals)
+✅ Funciones básicas: transfer, approve, transferFrom
+✅ Permit functionality (solo en WithPermit version)
+✅ Edge cases: zero transfers, insufficient balance
+✅ Events emitidos correctamente
+Phase 2: ERC20Wrapped - Contrato Core
+Task 2.1: ERC20Wrapped - Estructura Base
+Objetivo: Implementar el wrapper que recibe token subyacente y emite token envuelto
+
+Criterios del README:
+
+Recibe el token subyacente y emite (acuña) el token envuelto
+Parámetros fijos al despliegue: Subyacente, Fee en depósito, Factory
+Mantener invariante: 1 token envuelto ↔ 1 token subyacente en reserva
+Tests requeridos:
+
+✅ Deploy con parámetros correctos (underlying, fee, factory)
+✅ Variables inmutables configuradas
+✅ Herencia ERC-20 funcional
+✅ Getters para underlying, fee, factory
+✅ Initial supply = 0
+Task 2.2: Función Deposit (Wrap) - Aprobación Clásica
+Objetivo: Implementar depósito según Flujo 3 del README
+
+Criterios del README:
+
+Usuario entrega el subyacente
+Se calcula comisión y se envía al receptor de la fábrica
+Wrapper conserva resto como reserva y emite tokens envueltos
+Fee se descuenta del depósito (usuario recibe menos wrapped)
+Tests requeridos:
+
+✅ Deposit exitoso con cálculo de fee correcto
+✅ Fee enviado al receptor actual de factory
+✅ Tokens wrapped emitidos = amount - fee
+✅ Invariante mantenido: wrapped_supply = underlying_reserves
+✅ Revert si amount = 0
+✅ Revert si insufficient allowance
+✅ Event emitido con datos correctos
+Task 2.3: Función Withdraw (Unwrap)
+Objetivo: Implementar retiro según Flujo 5 del README
+
+Criterios del README:
+
+Usuario retorna tokens envueltos
+Wrapper quema esos tokens y devuelve subyacente desde reserva
+No se cobra fee al retirar (según especificación)
+Mantener equivalencia 1:1
+Tests requeridos:
+
+✅ Withdraw exitoso sin fees
+✅ Tokens wrapped quemados correctamente
+✅ Underlying devuelto 1:1 desde reservas
+✅ Invariante mantenido después del withdraw
+✅ Revert si insufficient wrapped balance
+✅ Revert si amount = 0
+✅ Event emitido
+Task 2.4: Deposit con Permit (EIP-2612)
+Objetivo: Implementar Flujo 4 del README - mejor UX
+
+Criterios del README:
+
+Usuario firma autorización fuera de cadena (no paga gas)
+Wrapper usa firma para obtener permiso en misma transacción
+Resultado: flujo de depósito en una sola transacción (mejor UX)
+Tests requeridos:
+
+✅ Deposit exitoso con permit signature válida
+✅ Mismo comportamiento que deposit normal
+✅ Revert con signature inválida
+✅ Revert con deadline expirado
+✅ Revert si token no soporta permit
+✅ Gas comparison: permit vs approve+deposit
+Phase 3: WrapperFactory - Fábrica y Gobernanza
+Task 3.1: WrapperFactory - Estructura y Roles
+Objetivo: Implementar fábrica con gobernanza según punto 4 del README
+
+Criterios del README:
+
+Administrator: gestiona quién es Operator y Treasurer
+Treasurer: puede cambiar receptor de comisiones
+Operator: puede cambiar tasa de fee para futuros wrappers
+Receptor de comisiones: dirección única que fábrica publica
+Fee en depósito: número global para crear wrappers
+Tests requeridos:
+
+✅ Deploy con configuración inicial
+✅ Roles asignados correctamente al deploy
+✅ Solo Administrator puede cambiar roles
+✅ Variables iniciales: feeRecipient, depositFeeRate
+✅ Access control funcionando
+✅ Events para cambios de roles
+Task 3.2: Factory - Crear Wrappers
+Objetivo: Implementar Flujo 2 del README
+
+Criterios del README:
+
+Cualquiera puede pedir crear wrapper para token subyacente
+Verificar que no exista ya wrapper de ese subyacente (unicidad)
+Crear ERC20Wrapped con: subyacente, fee actual, dirección factory
+Evitar duplicados confusos
+Tests requeridos:
+
+✅ Deploy nuevo wrapper exitoso
+✅ Wrapper configurado con parámetros actuales de factory
+✅ Registro en mapping: underlying → wrapper
+✅ Revert si wrapper ya existe (unicidad)
+✅ Revert si underlying = address(0)
+✅ Event WrapperCreated emitido
+✅ Cualquier usuario puede crear wrapper
+Task 3.3: Factory - Gestión de Fees y Receptores
+Objetivo: Implementar Flujos 6 y 7 del README
+
+Criterios del README:
+
+Treasurer puede cambiar receptor de comisiones (Flujo 6)
+Operator puede cambiar tasa de fee para futuros wrappers (Flujo 7)
+Cambios no afectan wrappers ya desplegados
+Wrappers preguntan a factory el receptor vigente en cada depósito
+Tests requeridos:
+
+✅ Solo Treasurer puede cambiar fee recipient
+✅ Solo Operator puede cambiar fee rate
+✅ Otros roles no pueden hacer cambios
+✅ Fee rate tiene límites razonables (ej: max 10%)
+✅ Address zero validation para fee recipient
+✅ Events emitidos para cambios
+✅ Cambios no afectan wrappers existentes
+Phase 4: Integración Factory-Wrapper
+Task 4.1: Consulta Dinámica de Fee Recipient
+Objetivo: Wrapper consulta factory para receptor actual (del README)
+
+Criterios del README:
+
+Wrapper pregunta a factory "¿Quién es hoy el receptor?" en cada depósito
+Permite cambiar destino de comisiones sin redeploy de wrappers
+Factory publica receptor único, wrappers lo consultan
+Tests requeridos:
+
+✅ Wrapper usa fee recipient actual de factory
+✅ Cambio en factory afecta inmediatamente todos los wrappers
+✅ Múltiples wrappers usan mismo recipient
+✅ Revert si factory devuelve address(0)
+✅ Wrapper funciona correctamente tras cambio de recipient
+Task 4.2: Actualizabilidad de Factory
+Objetivo: Factory actualizable sin romper wrappers existentes (del README)
+
+Criterios del README:
+
+Factory debe poder evolucionar (corregir bugs, añadir funciones)
+No romper wrappers ya creados
+Mejorar sistema con el tiempo
+Tests requeridos:
+
+✅ Factory actualizable (proxy pattern)
+✅ Wrappers existentes siguen funcionando tras upgrade
+✅ Nuevos wrappers usan lógica actualizada
+✅ Datos persistentes tras upgrade (mappings, variables)
+✅ Solo Administrator puede hacer upgrade
+Phase 5: Seguridad y Casos Extremos
+Task 5.1: Validaciones de Seguridad
+Objetivo: Implementar criterios de seguridad del README punto 6
+
+Criterios del README:
+
+No pérdida de fondos: wrapper mantiene reservas para respaldar suministro
+Fee reduce lo que usuario recibe para no "descalzar" reservas vs suministro
+Prevenir abuso: nadie puede drenar reservas sin devolver envueltos
+Cambios limitados por roles
+Tests requeridos:
+
+✅ Reentrancy protection en deposit/withdraw
+✅ Integer overflow/underflow protection
+✅ Fee calculation mantiene invariantes
+✅ Zero amount validations
+✅ Address zero validations
+✅ Invariante siempre mantenido: reserves >= wrapped_supply
+Task 5.2: Tokens Deflacionarios y Edge Cases
+Objetivo: Manejar casos mencionados en README punto 6
+
+Criterios del README:
+
+El diseño asume tokens ERC-20 estándar
+Tokens deflacionarios (fee-on-transfer) complican contabilidad
+Decidir cómo tratar estos casos especiales
+Tests requeridos:
+
+✅ Comportamiento con tokens deflacionarios
+✅ Wrapper con fee rate = 0%
+✅ Wrapper con fee rate máximo permitido
+✅ Múltiples depósitos/retiros consecutivos
+✅ Comportamiento con balances muy pequeños
+✅ Comportamiento con balances = 0
+Phase 6: Tests de Integración E2E
+Task 6.1: Flujos Completos del README
+Objetivo: Implementar todos los flujos de ejemplo del README
+
+Tests de Flujos Específicos:
+
+✅ Flujo 1: Configuración inicial de fábrica (roles, fee, recipient)
+✅ Flujo 2: Lanzar nuevo wrapper para token X
+✅ Flujo 3: Depósito con aprobación clásica (María, 100X → 99wX)
+✅ Flujo 4: Depósito con permit (Juan, 200X → 198wX)
+✅ Flujo 5: Retiro (Ana, 50wX → 50X)
+✅ Flujo 6: Cambiar receptor de comisiones
+✅ Flujo 7: Subir tasa de fee para futuros wrappers
+Task 6.2: Optimización y Análisis Final
+Objetivo: Optimización según experiencia de usuario del README
+
+Criterios del README:
+
+Con permit, depósitos son más sencillos (menos pasos, mejor UX)
+Gas efficiency importante para adoption
+Tests requeridos:
+
+✅ Gas comparison: permit vs approve+deposit flows
+✅ Factory deployment gas cost
+✅ Wrapper deployment gas cost
+✅ Deposit/withdraw gas costs optimizados
+✅ Multiple users, multiple wrappers stress test
+✅ Performance con high volume operations
+🏗️ Arquitectura CRED Token
+🎯 Orden de Implementación CRED Token
+Foundation: Task 1.1 (Mock tokens)
+Core Wrapper: Tasks 2.1 → 2.2 → 2.3 → 2.4
+Factory System: Tasks 3.1 → 3.2 → 3.3
+Integration: Tasks 4.1 → 4.2
+Security: Tasks 5.1 → 5.2
+E2E Validation: Tasks 6.1 → 6.2
+✅ Definition of Done por Task
+✅ Implementación cumple criterios específicos del README
+✅ Todos los tests pasan
+✅ Coverage > 95%
+✅ No warnings de compilación
+✅ Gas costs documentados
+✅ Invariantes del README mantenidos
