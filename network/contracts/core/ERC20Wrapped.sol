@@ -260,10 +260,25 @@ contract ERC20Wrapped is ERC20 {
      * @notice Quema tokens wrapped y recibe tokens subyacentes
      * @param wrappedAmount Cantidad de tokens wrapped a quemar
      * @return underlyingAmount Cantidad de tokens subyacentes recibidos
-     * @dev Será implementado en Task 2.3
      */
     function withdraw(uint256 wrappedAmount) external returns (uint256 underlyingAmount) {
-        // TODO: Implementar en Task 2.3
-        revert("Not implemented yet");
+        _validateNonZeroAmount(wrappedAmount);
+        
+        // Withdrawal es 1:1, sin fee
+        underlyingAmount = wrappedAmount;
+        
+        // Quemar tokens wrapped del usuario
+        _burn(msg.sender, wrappedAmount);
+        
+        // Transferir tokens subyacentes al usuario
+        try underlying.transfer(msg.sender, underlyingAmount) returns (bool success) {
+            if (!success) {
+                revert TransferFailed();
+            }
+        } catch {
+            revert TransferFailed();
+        }
+        
+        emit Withdrawal(msg.sender, wrappedAmount, underlyingAmount);
     }
 }
