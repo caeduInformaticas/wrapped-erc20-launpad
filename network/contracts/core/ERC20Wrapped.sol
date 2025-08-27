@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../interfaces/IWrapperFactory.sol";
 
 /**
  * @title IERC20Permit
@@ -178,15 +179,21 @@ contract ERC20Wrapped is ERC20 {
     /**
      * @notice Obtiene el receptor actual de fees desde la factory
      * @return feeRecipient Dirección donde enviar las comisiones
-     * @dev Esta función será implementada cuando tengamos la factory
-     * Por ahora retorna address(0) para evitar errores de compilación
+     * @dev Consulta la factory para obtener el receptor vigente
      */
-    function _getCurrentFeeRecipient() internal pure returns (address feeRecipient) {
-        // TODO: Implementar cuando tengamos IWrapperFactory
-        // return IWrapperFactory(factory).getFeeRecipient();
+    function _getCurrentFeeRecipient() internal view returns (address feeRecipient) {
+        // Si no hay factory configurada, devolver address(0)
+        if (factory == address(0)) {
+            return address(0);
+        }
         
-        // Placeholder para evitar errores de compilación
-        return address(0);
+        // Intentar obtener el fee recipient de la factory
+        try IWrapperFactory(factory).getFeeRecipient() returns (address recipient) {
+            return recipient;
+        } catch {
+            // Si falla la llamada, devolver address(0)
+            return address(0);
+        }
     }
     
     /**
