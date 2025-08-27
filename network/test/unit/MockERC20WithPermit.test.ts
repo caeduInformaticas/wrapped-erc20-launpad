@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { MockERC20WithPermit } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("MockERC20WithPermit", function () {
   let mockTokenWithPermit: MockERC20WithPermit;
@@ -113,8 +114,9 @@ describe("MockERC20WithPermit", function () {
     let deadline: number;
     
     beforeEach(async function () {
-      // Deadline 1 hora en el futuro
-      deadline = Math.floor(Date.now() / 1000) + 3600;
+      // Use hardhat's time utilities for proper deadline
+      const currentTimestamp = await time.latest();
+      deadline = currentTimestamp + 3600; // 1 hour from now
     });
 
     it("Should permit successfully with valid signature", async function () {
@@ -151,7 +153,8 @@ describe("MockERC20WithPermit", function () {
     });
 
     it("Should revert with expired deadline", async function () {
-      const expiredDeadline = Math.floor(Date.now() / 1000) - 3600; // 1 hora atrás
+      const currentTimestamp = await time.latest();
+      const expiredDeadline = currentTimestamp - 3600; // 1 hour ago
       const permitAmount = ethers.parseEther("500");
       
       const sig = await getPermitSignature(
@@ -258,7 +261,8 @@ describe("MockERC20WithPermit", function () {
     it("Should allow transferFrom after permit without prior approve", async function () {
       const permitAmount = ethers.parseEther("500");
       const transferAmount = ethers.parseEther("200");
-      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const currentTimestamp = await time.latest();
+      const deadline = currentTimestamp + 3600;
       
       // Verificar que no hay allowance inicial
       expect(await mockTokenWithPermit.allowance(alice.address, bob.address)).to.equal(0);
@@ -283,7 +287,8 @@ describe("MockERC20WithPermit", function () {
   describe("Gas Efficiency Comparison", function () {
     it("Should measure gas: approve+transferFrom vs permit+transferFrom", async function () {
       const amount = ethers.parseEther("100");
-      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const currentTimestamp = await time.latest();
+      const deadline = currentTimestamp + 3600;
       
       // Deploy fresh token for clean test
       const MockERC20WithPermitFactory = await ethers.getContractFactory("MockERC20WithPermit");

@@ -5,6 +5,22 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
+ * @title IERC20Permit
+ * @notice Interface para tokens ERC-20 que soportan EIP-2612 (permit)
+ */
+interface IERC20Permit {
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external;
+}
+
+/**
  * @title ERC20Wrapped
  * @notice Contrato wrapper que envuelve tokens ERC-20 existentes
  * @dev Implementa el core del sistema CRED Token según especificaciones del README
@@ -165,7 +181,7 @@ contract ERC20Wrapped is ERC20 {
      * @dev Esta función será implementada cuando tengamos la factory
      * Por ahora retorna address(0) para evitar errores de compilación
      */
-    function _getCurrentFeeRecipient() internal view returns (address feeRecipient) {
+    function _getCurrentFeeRecipient() internal pure returns (address feeRecipient) {
         // TODO: Implementar cuando tengamos IWrapperFactory
         // return IWrapperFactory(factory).getFeeRecipient();
         
@@ -243,7 +259,7 @@ contract ERC20Wrapped is ERC20 {
      * @param r Componente r de la firma
      * @param s Componente s de la firma
      * @return wrappedAmount Cantidad de tokens wrapped recibidos
-     * @dev Será implementado en Task 2.4
+     * @dev Implementación Task 2.4: permit + deposit en una transacción
      */
     function depositWithPermit(
         uint256 amount,
@@ -252,8 +268,46 @@ contract ERC20Wrapped is ERC20 {
         bytes32 r,
         bytes32 s
     ) external returns (uint256 wrappedAmount) {
-        // TODO: Implementar en Task 2.4
-        revert("Not implemented yet");
+        _validateNonZeroAmount(amount);
+        
+        // Primero ejecutar permit para obtener autorización
+        // Esto debe llamarse antes de transferFrom
+        IERC20Permit(address(underlying)).permit(msg.sender, address(this), amount, deadline, v, r, s);
+        
+        // Calcular el fee y la cantidad wrapped (misma lógica que deposit)
+        uint256 feeAmount = (amount * depositFeeRate) / FEE_BASE;
+        wrappedAmount = amount - feeAmount;
+        
+        // Transferir tokens del usuario a este contrato
+        // Esto debe funcionar ahora que tenemos permit
+        try underlying.transferFrom(msg.sender, address(this), amount) returns (bool success) {
+            if (!success) {
+                revert TransferFailed();
+            }
+        } catch {
+            revert TransferFailed();
+        }
+        
+        // Mintear tokens wrapped al usuario
+        _mint(msg.sender, wrappedAmount);
+        
+        // Transferir fee al recipient si hay fee (misma lógica que deposit)
+        address feeRecipient = address(0);
+        if (feeAmount > 0) {
+            feeRecipient = _getCurrentFeeRecipient();
+            if (feeRecipient != address(0)) {
+                try underlying.transfer(feeRecipient, feeAmount) returns (bool success) {
+                    if (!success) {
+                        revert TransferFailed();
+                    }
+                } catch {
+                    revert TransferFailed();
+                }
+            }
+            // Si no hay fee recipient, el fee queda en el contrato como reserva adicional
+        }
+        
+        emit Deposit(msg.sender, amount, wrappedAmount, feeAmount, feeRecipient);
     }
     
     /**

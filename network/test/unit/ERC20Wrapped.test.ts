@@ -258,22 +258,22 @@ describe("ERC20Wrapped - Structure Base", function () {
   });
 
   describe("Placeholder Functions", function () {
-    it("Should revert deposit function with 'Not implemented yet'", async function () {
+    it("Should revert deposit function when user has no allowance", async function () {
       await expect(
         wrappedToken.deposit(100)
-      ).to.be.revertedWith("Not implemented yet");
+      ).to.be.revertedWithCustomError(wrappedToken, "TransferFailed");
     });
 
-    it("Should revert depositWithPermit function with 'Not implemented yet'", async function () {
+    it("Should revert depositWithPermit function with invalid signature", async function () {
       await expect(
         wrappedToken.depositWithPermit(100, 1000000000, 27, ethers.ZeroHash, ethers.ZeroHash)
-      ).to.be.revertedWith("Not implemented yet");
+      ).to.be.reverted; // Any revert is fine for invalid signature
     });
 
-    it("Should revert withdraw function with 'Not implemented yet'", async function () {
+    it("Should revert withdraw function when user has no balance", async function () {
       await expect(
         wrappedToken.withdraw(100)
-      ).to.be.revertedWith("Not implemented yet");
+      ).to.be.revertedWithCustomError(wrappedToken, "ERC20InsufficientBalance");
     });
   });
 
