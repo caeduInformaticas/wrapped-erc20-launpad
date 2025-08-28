@@ -187,6 +187,16 @@ contract ERC20Wrapped is ERC20 {
             return address(0);
         }
         
+        // Verificar que factory sea un contrato
+        address factoryAddr = factory;
+        uint256 size;
+        assembly {
+            size := extcodesize(factoryAddr)
+        }
+        if (size == 0) {
+            return address(0);
+        }
+        
         // Intentar obtener el fee recipient de la factory
         try IWrapperFactory(factory).getFeeRecipient() returns (address recipient) {
             return recipient;
