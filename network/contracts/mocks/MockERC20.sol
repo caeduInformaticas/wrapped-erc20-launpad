@@ -103,7 +103,7 @@ contract MockERC20 {
      * @param value Cantidad a transferir
      * @return success True si la transferencia fue exitosa
      */
-    function _transfer(address from, address to, uint256 value) internal returns (bool) {
+    function _transfer(address from, address to, uint256 value) internal virtual returns (bool) {
         require(to != address(0), "MockERC20: transfer to zero address");
         require(balanceOf[from] >= value, "MockERC20: insufficient balance");
         

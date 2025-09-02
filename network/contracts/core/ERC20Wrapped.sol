@@ -3,6 +3,8 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import "../interfaces/IWrapperFactory.sol";
 
 /**
@@ -32,7 +34,7 @@ interface IERC20Permit {
  * - Mantiene invariante: 1 token envuelto ↔ 1 token subyacente en reserva
  * - Consulta factory para receptor actual de comisiones
  */
-contract ERC20Wrapped is ERC20 {
+contract ERC20Wrapped is ERC20, ReentrancyGuard {
     // ====== IMMUTABLE STATE VARIABLES ======
     // Estos valores se fijan al desplegar y nunca cambian
     
@@ -79,6 +81,8 @@ contract ERC20Wrapped is ERC20 {
     error TransferFailed();
     error InvalidFactory();
     error InsufficientReserves();
+    error InvariantViolation();
+    error InvalidRecipient();
 // 
     // ====== CONSTRUCTOR ======
     
@@ -165,7 +169,7 @@ contract ERC20Wrapped is ERC20 {
      * @return reserves Reservas actuales
      * @return supply Supply actual de tokens wrapped
      */
-    function checkInvariant() external view returns (
+    function checkInvariant() public view returns (
         bool isHealthy,
         uint256 reserves,
         uint256 supply
@@ -231,12 +235,27 @@ contract ERC20Wrapped is ERC20 {
      * @param amount Cantidad de tokens subyacentes a depositar
      * @return wrappedAmount Cantidad de tokens wrapped recibidos
      */
-    function deposit(uint256 amount) external returns (uint256 wrappedAmount) {
+    function deposit(uint256 amount) external nonReentrant returns (uint256 wrappedAmount) {
         _validateNonZeroAmount(amount);
+        _validateNonZeroAddress(msg.sender);
         
-        // Calcular el fee y la cantidad wrapped
-        uint256 feeAmount = (amount * depositFeeRate) / FEE_BASE;
-        wrappedAmount = amount - feeAmount;
+        // Verificar invariante antes de la operación
+        (bool isHealthyBefore,,) = checkInvariant();
+        if (!isHealthyBefore) revert InvariantViolation();
+        
+        // Calcular el fee y la cantidad wrapped con protección contra overflow
+        uint256 feeAmount;
+        unchecked {
+            // Safe math: depositFeeRate <= MAX_FEE_RATE (1000) y amount es válido
+            feeAmount = (amount * depositFeeRate) / FEE_BASE;
+            wrappedAmount = amount - feeAmount;
+        }
+        
+        // Validar que el resultado sea lógico
+        if (wrappedAmount == 0 && amount > 0) revert ZeroAmount();
+        
+        // Obtener balance previo para verificar transferencia real
+        uint256 balanceBefore = underlying.balanceOf(address(this));
         
         // Transferir tokens del usuario a este contrato
         try underlying.transferFrom(msg.sender, address(this), amount) returns (bool success) {
@@ -247,14 +266,24 @@ contract ERC20Wrapped is ERC20 {
             revert TransferFailed();
         }
         
+        // Verificar que realmente recibimos los tokens (protección contra deflationary tokens)
+        uint256 balanceAfter = underlying.balanceOf(address(this));
+        uint256 actualReceived = balanceAfter - balanceBefore;
+        if (actualReceived < amount) {
+            // Para tokens deflacionarios, ajustar cálculos
+            feeAmount = (actualReceived * depositFeeRate) / FEE_BASE;
+            wrappedAmount = actualReceived - feeAmount;
+        }
+        
         // Mintear tokens wrapped al usuario
         _mint(msg.sender, wrappedAmount);
         
-        // Transferir fee al recipient si hay fee
+        // Transferir fee al recipient si hay fee y recipient válido
         address feeRecipient = address(0);
         if (feeAmount > 0) {
             feeRecipient = _getCurrentFeeRecipient();
             if (feeRecipient != address(0)) {
+                _validateNonZeroAddress(feeRecipient);
                 try underlying.transfer(feeRecipient, feeAmount) returns (bool success) {
                     if (!success) {
                         revert TransferFailed();
@@ -266,7 +295,11 @@ contract ERC20Wrapped is ERC20 {
             // Si no hay fee recipient, el fee queda en el contrato como reserva adicional
         }
         
-        emit Deposit(msg.sender, amount, wrappedAmount, feeAmount, feeRecipient);
+        // Verificar invariante después de la operación
+        (bool isHealthyAfter,,) = checkInvariant();
+        if (!isHealthyAfter) revert InvariantViolation();
+        
+        emit Deposit(msg.sender, actualReceived, wrappedAmount, feeAmount, feeRecipient);
     }
     
     /**
@@ -285,16 +318,31 @@ contract ERC20Wrapped is ERC20 {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external returns (uint256 wrappedAmount) {
+    ) external nonReentrant returns (uint256 wrappedAmount) {
         _validateNonZeroAmount(amount);
+        _validateNonZeroAddress(msg.sender);
+        
+        // Verificar invariante antes de la operación
+        (bool isHealthyBefore,,) = checkInvariant();
+        if (!isHealthyBefore) revert InvariantViolation();
         
         // Primero ejecutar permit para obtener autorización
         // Esto debe llamarse antes de transferFrom
         IERC20Permit(address(underlying)).permit(msg.sender, address(this), amount, deadline, v, r, s);
         
-        // Calcular el fee y la cantidad wrapped (misma lógica que deposit)
-        uint256 feeAmount = (amount * depositFeeRate) / FEE_BASE;
-        wrappedAmount = amount - feeAmount;
+        // Calcular el fee y la cantidad wrapped con protección contra overflow
+        uint256 feeAmount;
+        unchecked {
+            // Safe math: depositFeeRate <= MAX_FEE_RATE (1000) y amount es válido
+            feeAmount = (amount * depositFeeRate) / FEE_BASE;
+            wrappedAmount = amount - feeAmount;
+        }
+        
+        // Validar que el resultado sea lógico
+        if (wrappedAmount == 0 && amount > 0) revert ZeroAmount();
+        
+        // Obtener balance previo para verificar transferencia real
+        uint256 balanceBefore = underlying.balanceOf(address(this));
         
         // Transferir tokens del usuario a este contrato
         // Esto debe funcionar ahora que tenemos permit
@@ -306,14 +354,24 @@ contract ERC20Wrapped is ERC20 {
             revert TransferFailed();
         }
         
+        // Verificar que realmente recibimos los tokens (protección contra deflationary tokens)
+        uint256 balanceAfter = underlying.balanceOf(address(this));
+        uint256 actualReceived = balanceAfter - balanceBefore;
+        if (actualReceived < amount) {
+            // Para tokens deflacionarios, ajustar cálculos
+            feeAmount = (actualReceived * depositFeeRate) / FEE_BASE;
+            wrappedAmount = actualReceived - feeAmount;
+        }
+        
         // Mintear tokens wrapped al usuario
         _mint(msg.sender, wrappedAmount);
         
-        // Transferir fee al recipient si hay fee (misma lógica que deposit)
+        // Transferir fee al recipient si hay fee y recipient válido
         address feeRecipient = address(0);
         if (feeAmount > 0) {
             feeRecipient = _getCurrentFeeRecipient();
             if (feeRecipient != address(0)) {
+                _validateNonZeroAddress(feeRecipient);
                 try underlying.transfer(feeRecipient, feeAmount) returns (bool success) {
                     if (!success) {
                         revert TransferFailed();
@@ -325,7 +383,11 @@ contract ERC20Wrapped is ERC20 {
             // Si no hay fee recipient, el fee queda en el contrato como reserva adicional
         }
         
-        emit Deposit(msg.sender, amount, wrappedAmount, feeAmount, feeRecipient);
+        // Verificar invariante después de la operación
+        (bool isHealthyAfter,,) = checkInvariant();
+        if (!isHealthyAfter) revert InvariantViolation();
+        
+        emit Deposit(msg.sender, actualReceived, wrappedAmount, feeAmount, feeRecipient);
     }
     
     /**
@@ -333,17 +395,27 @@ contract ERC20Wrapped is ERC20 {
      * @param wrappedAmount Cantidad de tokens wrapped a quemar
      * @return underlyingAmount Cantidad de tokens subyacentes recibidos
      */
-    function withdraw(uint256 wrappedAmount) external returns (uint256 underlyingAmount) {
+    function withdraw(uint256 wrappedAmount) external nonReentrant returns (uint256 underlyingAmount) {
         _validateNonZeroAmount(wrappedAmount);
+        _validateNonZeroAddress(msg.sender);
+        
+        // Verificar invariante antes de la operación
+        (bool isHealthyBefore,,) = checkInvariant();
+        if (!isHealthyBefore) revert InvariantViolation();
         
         // Withdrawal es 1:1, sin fee
         underlyingAmount = wrappedAmount;
         
-        // ✅ VALIDACIÓN ADICIONAL ÚTIL:
-        // uint256 reserves = underlying.balanceOf(address(this));
-        // if (reserves < underlyingAmount) {
-        //     revert InsufficientReserves();
-        // }
+        // Verificar que el usuario tiene suficientes tokens wrapped PRIMERO
+        if (balanceOf(msg.sender) < wrappedAmount) {
+            revert ERC20InsufficientBalance(msg.sender, balanceOf(msg.sender), wrappedAmount);
+        }
+        
+        // Luego validar que hay suficientes reservas
+        uint256 reserves = underlying.balanceOf(address(this));
+        if (reserves < underlyingAmount) {
+            revert InsufficientReserves();
+        }
         
         // Quemar tokens wrapped del usuario
         _burn(msg.sender, wrappedAmount);
@@ -356,6 +428,10 @@ contract ERC20Wrapped is ERC20 {
         } catch {
             revert TransferFailed();
         }
+        
+        // Verificar invariante después de la operación
+        (bool isHealthyAfter,,) = checkInvariant();
+        if (!isHealthyAfter) revert InvariantViolation();
         
         emit Withdrawal(msg.sender, wrappedAmount, underlyingAmount);
     }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/StorageSlot.sol";
@@ -24,6 +25,7 @@ contract WrapperFactoryUpgradeable is
     Initializable, 
     AccessControlEnumerableUpgradeable, 
     PausableUpgradeable, 
+    ReentrancyGuardUpgradeable,
     UUPSUpgradeable,
     IWrapperFactory 
 {
@@ -128,6 +130,7 @@ contract WrapperFactoryUpgradeable is
         // Inicializar contratos padre
         __AccessControlEnumerable_init();
         __Pausable_init();
+        __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
         
         // Configurar variables de estado
@@ -261,7 +264,7 @@ contract WrapperFactoryUpgradeable is
         address underlying,
         string memory wrappedName,
         string memory wrappedSymbol
-    ) external virtual whenNotPaused returns (address wrapper) {
+    ) external virtual whenNotPaused nonReentrant returns (address wrapper) {
         // Validaciones
         if (underlying == address(0)) revert InvalidUnderlyingToken();
         if (wrapperForUnderlying[underlying] != address(0)) revert WrapperAlreadyExists();
