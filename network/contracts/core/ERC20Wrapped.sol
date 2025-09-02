@@ -78,7 +78,8 @@ contract ERC20Wrapped is ERC20 {
     error InvalidFeeRate();
     error TransferFailed();
     error InvalidFactory();
-    
+    error InsufficientReserves();
+// 
     // ====== CONSTRUCTOR ======
     
     /**
@@ -337,6 +338,12 @@ contract ERC20Wrapped is ERC20 {
         
         // Withdrawal es 1:1, sin fee
         underlyingAmount = wrappedAmount;
+        
+        // ✅ VALIDACIÓN ADICIONAL ÚTIL:
+        // uint256 reserves = underlying.balanceOf(address(this));
+        // if (reserves < underlyingAmount) {
+        //     revert InsufficientReserves();
+        // }
         
         // Quemar tokens wrapped del usuario
         _burn(msg.sender, wrappedAmount);
